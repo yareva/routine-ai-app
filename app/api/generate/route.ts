@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
     const { input, mode, timeOfDay } = await request.json()
 
     const apiKey = process.env.NVIDIA_API_KEY
+    console.log('[v0] NVIDIA_API_KEY exists:', !!apiKey, 'length:', apiKey?.length || 0)
 
     if (!input) {
       return NextResponse.json({ error: 'No input provided' }, { status: 400 })
