@@ -8,8 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     const { input, mode, timeOfDay } = await request.json()
 
-    const apiKey = process.env.VITE_NVIDIA_API_KEY
-    console.log('[v0] VITE_NVIDIA_API_KEY exists:', !!apiKey, 'length:', apiKey?.length || 0)
+    const apiKey = process.env.NVIDIA_API_KEY
 
     if (!input) {
       return NextResponse.json({ error: 'No input provided' }, { status: 400 })
