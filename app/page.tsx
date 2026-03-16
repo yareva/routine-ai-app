@@ -112,29 +112,25 @@ export default function RoutineAI() {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
           stream.getTracks().forEach(track => track.stop())
           
-          // Convert to base64 and send to ASR
-          const reader = new FileReader()
-          reader.onload = async () => {
-            const base64Audio = (reader.result as string).split(',')[1]
+          // Send audio file to ASR
+          try {
+            const formData = new FormData()
+            formData.append('file', audioBlob, 'recording.webm')
             
-            try {
-              const response = await fetch('/api/asr', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ audio: base64Audio }),
-              })
-              
-              if (!response.ok) {
-                throw new Error('ASR failed')
-              }
-              
-              const data = await response.json()
-              setTranscript(data.transcript || '')
-            } catch {
-              setError('Failed to transcribe audio. Please try again.')
+            const response = await fetch('/api/asr', {
+              method: 'POST',
+              body: formData,
+            })
+            
+            if (!response.ok) {
+              throw new Error('ASR failed')
             }
+            
+            const data = await response.json()
+            setTranscript(data.transcript || '')
+          } catch {
+            setError('Failed to transcribe audio. Please try again.')
           }
-          reader.readAsDataURL(audioBlob)
         }
 
         mediaRecorder.start()
