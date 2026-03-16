@@ -8,8 +8,15 @@ export async function POST(request: NextRequest) {
   try {
     const { input, mode, timeOfDay } = await request.json()
 
+    const apiKey = process.env.VITE_NVIDIA_API_KEY
+    console.log('[v0] VITE_NVIDIA_API_KEY exists:', !!apiKey, 'length:', apiKey?.length || 0)
+
     if (!input) {
       return NextResponse.json({ error: 'No input provided' }, { status: 400 })
+    }
+    
+    if (!apiKey) {
+      return NextResponse.json({ error: 'NVIDIA API key not configured' }, { status: 500 })
     }
 
     const systemPrompt = mode === 'scan' ? SCAN_MODE_PROMPT : BRAIN_DUMP_PROMPT
@@ -20,7 +27,7 @@ export async function POST(request: NextRequest) {
     const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.VITE_NVIDIA_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
