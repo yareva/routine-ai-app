@@ -1,5 +1,12 @@
 'use client'
 
+declare global {
+  interface Window {
+    SpeechRecognition: any
+    webkitSpeechRecognition: any
+  }
+}
+
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Camera, Check, AlertCircle, RefreshCw } from 'lucide-react'
 import { MicButton } from '@/components/mic-button'
@@ -24,22 +31,19 @@ export default function RoutineAI() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
+  const recognitionRef = useRef<any>(null)
 
-  // Load history from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('routine-history')
     if (saved) {
       try {
         setHistory(JSON.parse(saved))
       } catch {
-        // Ignore parse errors
+        // ignore
       }
     }
   }, [])
 
-  // Save history to localStorage
   const saveToHistory = useCallback((newRoutine: Routine) => {
     const entry: HistoryEntry = {
       id: Date.now().toString(),
@@ -56,30 +60,21 @@ export default function RoutineAI() {
     localStorage.setItem('routine-history', JSON.stringify(updatedHistory))
   }, [history, timeOfDay])
 
-  // Handle image scan
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     setError(null)
-    
     const reader = new FileReader()
     reader.onload = async () => {
       const base64 = reader.result as string
       setScannedImage(base64)
-      
-      // Call OCR API
       try {
         const response = await fetch('/api/ocr', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image: base64 }),
         })
-        
-        if (!response.ok) {
-          throw new Error('OCR failed')
-        }
-        
+        if (!response.ok) throw new Error('OCR failed')
         const data = await response.json()
         setScannedText(data.text || '')
       } catch {
@@ -90,64 +85,48 @@ export default function RoutineAI() {
     reader.readAsDataURL(file)
   }
 
-  // Handle voice recording
-  const toggleRecording = async () => {
+  const toggleRecording = () => {
     if (isRecording) {
-      // Stop recording
-      mediaRecorderRef.current?.stop()
+      recognitionRef.current?.stop()
       setIsRecording(false)
-    } else {
-      // Start recording
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        const mediaRecorder = new MediaRecorder(stream)
-        mediaRecorderRef.current = mediaRecorder
-        audioChunksRef.current = []
-
-        mediaRecorder.ondataavailable = (e) => {
-          audioChunksRef.current.push(e.data)
-        }
-
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-          stream.getTracks().forEach(track => track.stop())
-          
-          // Send audio file to ASR
-          try {
-            const formData = new FormData()
-            formData.append('file', audioBlob, 'recording.webm')
-            
-            const response = await fetch('/api/asr', {
-              method: 'POST',
-              body: formData,
-            })
-            
-            if (!response.ok) {
-              throw new Error('ASR failed')
-            }
-            
-            const data = await response.json()
-            setTranscript(data.transcript || '')
-          } catch {
-            setError('Failed to transcribe audio. Please try again.')
-          }
-        }
-
-        mediaRecorder.start()
-        setIsRecording(true)
-        setError(null)
-      } catch {
-        setError('Could not access microphone. Please check permissions.')
-      }
+      return
     }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setError('Speech recognition not supported — please type instead.')
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognitionRef.current = recognition
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'en-US'
+
+    recognition.onresult = (event: any) => {
+      const text = Array.from(event.results)
+        .map((r: any) => r[0].transcript)
+        .join('')
+      setTranscript(text)
+    }
+
+    recognition.onerror = () => {
+      setError('Microphone error. Please try again.')
+      setIsRecording(false)
+    }
+
+    recognition.onend = () => setIsRecording(false)
+
+    recognition.start()
+    setIsRecording(true)
+    setError(null)
   }
 
-  // Generate routine
   const generateRoutine = async () => {
     setError(null)
     setIsLoading(true)
 
-    // Determine input and mode
     let input = ''
     let mode = 'text'
 
@@ -172,11 +151,7 @@ export default function RoutineAI() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input, mode, timeOfDay }),
       })
-
-      if (!response.ok) {
-        throw new Error('Generation failed')
-      }
-
+      if (!response.ok) throw new Error('Generation failed')
       const data = await response.json()
       if (data.routine) {
         setRoutine(data.routine)
@@ -192,7 +167,6 @@ export default function RoutineAI() {
     }
   }
 
-  // Reset all state
   const startOver = () => {
     setTranscript('')
     setTextInput('')
@@ -201,25 +175,21 @@ export default function RoutineAI() {
     setRoutine(null)
     setShowRoutine(false)
     setError(null)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
+    recognitionRef.current?.stop()
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   return (
     <main className="min-h-screen flex flex-col p-4 sm:p-6 max-w-lg mx-auto">
-      {/* Header */}
       <header className="flex items-start justify-between mb-2">
         <h1 className="font-serif text-2xl sm:text-3xl tracking-tight">routine ai</h1>
         <p className="text-sm text-muted-foreground">hey, friend</p>
       </header>
 
-      {/* Time Toggle */}
       <div className="flex justify-center mb-8">
         <TimeToggle value={timeOfDay} onChange={setTimeOfDay} />
       </div>
 
-      {/* Camera Button */}
       <div className="flex justify-center mb-6">
         <input
           ref={fileInputRef}
@@ -232,32 +202,24 @@ export default function RoutineAI() {
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className={`w-12 h-12 rounded-full border-2 border-border flex items-center justify-center transition-all ${
-            scannedImage ? 'bg-foreground text-background' : 'hover:bg-muted'
-          }`}
+          className={`w-12 h-12 rounded-full border-2 border-border flex items-center justify-center transition-all ${scannedImage ? 'bg-foreground text-background' : 'hover:bg-muted'
+            }`}
           aria-label={scannedImage ? 'Image scanned' : 'Scan image'}
         >
-          {scannedImage ? (
-            <Check className="w-5 h-5" />
-          ) : (
-            <Camera className="w-5 h-5" />
-          )}
+          {scannedImage ? <Check className="w-5 h-5" /> : <Camera className="w-5 h-5" />}
         </button>
       </div>
 
-      {/* Main Content Area */}
       <div className="flex-1 flex items-center justify-center relative">
-        {/* Make My Routine Button - Left Side */}
         <button
           onClick={generateRoutine}
           disabled={isLoading}
-          className="absolute left-0 top-1/2 -translate-y-1/2 writing-vertical-lr rotate-180 px-3 py-6 bg-foreground text-background rounded-full text-sm tracking-wide hover:opacity-90 transition-opacity disabled:opacity-50"
-          style={{ writingMode: 'vertical-lr' }}
+          className="absolute left-0 top-1/2 -translate-y-1/2 px-3 py-6 bg-foreground text-background rounded-full text-sm tracking-wide hover:opacity-90 transition-opacity disabled:opacity-50"
+          style={{ writingMode: 'vertical-lr', transform: 'translateY(-50%) rotate(180deg)' }}
         >
           {isLoading ? 'generating...' : 'make my routine'}
         </button>
 
-        {/* Mic Button */}
         <div className="flex flex-col items-center">
           <MicButton
             isRecording={isRecording}
@@ -265,14 +227,12 @@ export default function RoutineAI() {
             disabled={isLoading}
           />
 
-          {/* Transcript Display */}
           {transcript && (
             <p className="mt-4 text-sm text-muted-foreground text-center max-w-xs animate-in fade-in">
               {`"${transcript}"`}
             </p>
           )}
 
-          {/* Or Type Button */}
           <button
             onClick={() => setShowTextInput(!showTextInput)}
             className="mt-6 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -280,7 +240,6 @@ export default function RoutineAI() {
             or type
           </button>
 
-          {/* Text Input */}
           {showTextInput && (
             <textarea
               value={textInput}
@@ -293,7 +252,6 @@ export default function RoutineAI() {
         </div>
       </div>
 
-      {/* Error Display */}
       {error && (
         <div className="flex items-center gap-2 justify-center text-sm text-destructive mb-4 animate-in fade-in">
           <AlertCircle className="w-4 h-4" />
@@ -301,14 +259,13 @@ export default function RoutineAI() {
           <button
             onClick={() => setError(null)}
             className="p-1 hover:bg-muted rounded"
-            aria-label="Retry"
+            aria-label="Dismiss error"
           >
             <RefreshCw className="w-3 h-3" />
           </button>
         </div>
       )}
 
-      {/* History Link */}
       <footer className="flex justify-end">
         <button
           onClick={() => setShowHistory(true)}
@@ -318,7 +275,6 @@ export default function RoutineAI() {
         </button>
       </footer>
 
-      {/* Routine Sheet */}
       <RoutineSheet
         routine={routine}
         isOpen={showRoutine}
@@ -326,7 +282,6 @@ export default function RoutineAI() {
         onStartOver={startOver}
       />
 
-      {/* History Drawer */}
       <HistoryDrawer
         isOpen={showHistory}
         onClose={() => setShowHistory(false)}
