@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'nvidia/llama-3.1-nemotron-ultra-253b-v1',
+        model: 'meta/llama-3.1-70b-instruct',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
