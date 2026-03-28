@@ -91,7 +91,7 @@ npm run dev
 4. A checkmark preview replaces the camera icon once processed
 
 ### Text Mode
-Tap "or type" → inline textarea expands → type your brain dump → submit
+Tap "or type" → inline text area expands → type your brain dump → submit
 
 ### Schedule Output (all modes)
 Nemotron returns structured JSON:
